@@ -1,6 +1,6 @@
 <script lang='ts'>
   import AutoComplete from 'simple-svelte-autocomplete';
-  import { getContext, onDestroy, tick } from 'svelte';
+  import { getContext, onDestroy } from 'svelte';
 
   export let field;
   export let label;
@@ -28,8 +28,7 @@
 
   let fieldState;
   let fieldApi;
-  let unsubscribe;
-  let text = "";
+  let text = '';
   let selectedItem;
   let initialItemsPromise;
 
@@ -37,69 +36,62 @@
   const labelPos = fieldGroupContext?.labelPosition || 'above';
   $: formStep = formStepContext ? $formStepContext || 1 : 1;
   $: labelClass = labelPos === 'above' ? '' : `spectrum-FieldLabel--${labelPos}`;
+  $: delay = dataSourceType === 'static' ? 0 : 100;
 
   $: dataContext = {
     text,
     value: selectedItem?.[valueFieldName]
   };
 
-  $: delay = dataSourceType === 'static' ? 0 : 100;
+  // Init du champ de formulaire
+  $: if (formApi && field) {
+    const formField = formApi.registerField(field, 'text', '', false, validation, formStep);
+    unsubscribe = formField?.subscribe(async (fieldValue) => {
+      fieldState = fieldValue?.fieldState;
+      fieldApi = fieldValue?.fieldApi;
 
-  $: if (field) {
-    if (formApi) {
-      const formField = formApi.registerField(
-        field,
-        'text',
-        '',
-        false,
-        validation,
-        formStep
-      );
+      const value = fieldState?.value;
+      if (value && !initialItemsPromise) {
+        console.log('[🔄] Loading initial items for', value);
+        placeholder = 'Loading...';
+        initialItemsPromise = await getItems(value);
+        const item = (await initialItemsPromise).find(i => i[valueFieldName] === value);
 
-      unsubscribe = formField?.subscribe(async (fieldValue) => {
-        fieldState = fieldValue?.fieldState;
-        fieldApi = fieldValue?.fieldApi;
-        const value = fieldState?.value;
+        selectedItem = item ?? {
+          [valueFieldName]: value,
+          [labelFieldName]: value
+        };
 
-        if (value && !initialItemsPromise) {
-          placeholder = 'Loading';
-          initialItemsPromise = await getItems(value);
-          const item = (await initialItemsPromise).find((item) => item[valueFieldName] === value);
-
-          if (item) {
-            selectedItem = item;
-          } else {
-            selectedItem = {
-              [valueFieldName]: value,
-              [labelFieldName]: value
-            };
-          }
-
-          placeholder = '';
-        }
-      });
-    } else {
-      tick().then(() => {});
-    }
+        placeholder = '';
+      }
+    });
   }
 
+  // Gestion du loading de query (Budibase query mode)
   $: if (dataSourceType === 'query' || (dataSourceType === 'budibase' && searchEvent)) {
-    const parsedLoading = loading?.toLowerCase() === 'true' || loading === '1';
-
+    const parsedLoading = loading?.toLowerCase?.() === 'true' || loading === '1';
     if (parsedLoading && !loadingResolver) {
+      console.log('[🔁] Loading results from query...');
       resultsPromise = new Promise((resolve) => {
         loadingResolver = resolve;
       });
     } else if (!parsedLoading && loadingResolver) {
-      if (!results) {
-        results = "[]";
+      try {
+        console.log('[✅] Resolving query results:', results);
+        const parsedResults =
+          dataSourceType === 'query' ? JSON.parse(results || '[]') : dataProvider?.rows;
+        console.log('[📦] Parsed results:', parsedResults);
+        loadingResolver(parsedResults || []);
+        loadingResolver = null;
+      } catch (err) {
+        console.error('[❌] Failed to parse results:', err);
+        loadingResolver([]);
+        loadingResolver = null;
       }
-      const parsedResults = dataSourceType === 'query' ? JSON.parse(results) : dataProvider?.rows;
-      loadingResolver(parsedResults);
-      loadingResolver = null;
     }
   }
 
+  // Force static config
   $: if (dataSourceType === 'static') {
     labelFieldName = 'label';
     valueFieldName = 'value';
@@ -111,78 +103,80 @@
   });
 
   async function getItems(keyword: string) {
+    console.log('[🔍] getItems called with keyword:', keyword);
+
     switch (dataSourceType) {
       case 'budibase':
         if (!searchEvent) {
-          return dataProvider?.rows;
+          console.log('[📡] Budibase - returning static rows');
+          return dataProvider?.rows || [];
         }
+
       case 'query':
         if (searchEvent) {
+          console.log('[📨] Firing search event for:', keyword);
           searchEvent({ keyword });
         }
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 100));
         return await resultsPromise;
-      case 'static':
-        return staticOptions;
-      case 'api':
-        const url = new URL(apiUrl);
-        url.searchParams.set(queryParam, keyword);
-        console.log('📡 Requête API', url.toString());
 
+      case 'static':
+        console.log('[📋] Using static options');
+        return staticOptions;
+
+      case 'api':
         try {
+          const url = new URL(apiUrl);
+          url.searchParams.set(queryParam, keyword);
+          console.log('[🌍] Fetching from API:', url.toString());
           const response = await fetch(url);
-          const data = await response.json();
-          console.log('✅ Résultat API', data);
-          return Array.isArray(data) ? data : [];
-        } catch (err) {
-          console.error('❌ Erreur API', err);
+          const json = await response.json();
+          console.log('[📥] API response:', json);
+          return json;
+        } catch (e) {
+          console.error('[❌] Error fetching from API:', e);
           return [];
         }
+
+      default:
+        console.warn('[❓] Unknown dataSourceType:', dataSourceType);
+        return [];
     }
   }
 
   function changeHandler(e) {
+    console.log('[🧠] selectedItem:', selectedItem);
+    console.log('[🧠] changeHandler event:', e);
     if (selectedItem) {
-      if (fieldApi) {
-        fieldApi.setValue(selectedItem[valueFieldName]);
-      } else {
-        dispatchEvent(
-          new CustomEvent('autocompleteChange', {
-            detail: {
-              field,
-              value: selectedItem?.[valueFieldName],
-              full: selectedItem
-            },
-            bubbles: true
-          })
-        );
-      }
+      fieldApi?.setValue(selectedItem[valueFieldName]);
     }
   }
 </script>
-
-
 
 <div class='spectrum-Form-item' class:above={labelPos === "above"} use:styleable={$component.styles}>
   {#if !formContext}
     <div class='placeholder'>Form components need to be wrapped in a form</div>
   {:else}
-    <label class:hidden={!label} for={fieldState?.fieldId} class={`spectrum-FieldLabel spectrum-FieldLabel--sizeM spectrum-Form-itemLabel ${labelClass}`}>
+    <label
+      class:hidden={!label}
+      for={fieldState?.fieldId}
+      class={`spectrum-FieldLabel spectrum-FieldLabel--sizeM spectrum-Form-itemLabel ${labelClass}`}
+    >
       {label || ' '}
     </label>
     <div class='spectrum-Form-itemField'>
       <AutoComplete
         inputId={fieldState?.fieldId}
-        class="autocomplete-width"
-        searchFunction="{getItems}"
+        className="autocomplete-width"
         bind:selectedItem
         bind:text
         {placeholder}
         {labelFieldName}
         {valueFieldName}
-        onChange="{changeHandler}"
         {delay}
         cleanUserText={false}
+        searchFunction={getItems}
+        onChange={changeHandler}
       />
     </div>
     {#if fieldState?.error}
@@ -190,7 +184,6 @@
     {/if}
   {/if}
 </div>
-
 
 <style>
   .placeholder {
