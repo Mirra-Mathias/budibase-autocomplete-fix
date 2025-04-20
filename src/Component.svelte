@@ -127,8 +127,17 @@
       case 'api':
         const url = new URL(apiUrl);
         url.searchParams.set(queryParam, keyword);
-        const response = await fetch(url);
-        return await response.json();
+        console.log('📡 Requête API', url.toString());
+
+        try {
+          const response = await fetch(url);
+          const data = await response.json();
+          console.log('✅ Résultat API', data);
+          return Array.isArray(data) ? data : [];
+        } catch (err) {
+          console.error('❌ Erreur API', err);
+          return [];
+        }
     }
   }
 
