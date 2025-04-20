@@ -108,8 +108,10 @@
 
   onDestroy(() => {
     fieldApi?.deregister();
-    unsubscribe?.();
-  });
+    if (typeof unsubscribe === "function") {
+        unsubscribe();
+    }
+});
 
   async function getItems(keyword: string) {
     console.log('🔎 getItems called with keyword:', keyword);
