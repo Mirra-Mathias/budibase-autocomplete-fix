@@ -87,21 +87,40 @@
   }
 
   $: if (dataSourceType === 'query' || (dataSourceType === 'budibase' && searchEvent)) {
-    const parsedLoading = loading?.toLowerCase() === 'true' || loading === '1';
+  const parsedLoading = loading?.toLowerCase() === 'true' || loading === '1';
 
-    if (parsedLoading && !loadingResolver) {
-      console.log('⏳ Waiting for search results...');
-      resultsPromise = new Promise((resolve) => {
-        loadingResolver = resolve;
-      });
-    } else if (!parsedLoading && loadingResolver) {
-      console.log('✅ Loading complete');
-      const parsedResults = dataSourceType === 'query' ? JSON.parse(results || '[]') : dataProvider?.rows;
-      console.log('📊 Results:', parsedResults);
+  if (parsedLoading && !loadingResolver) {
+    console.log('⏳ Chargement des résultats (promise init)');
+    resultsPromise = new Promise((resolve) => {
+      loadingResolver = resolve;
+    });
+  } else if (!parsedLoading && loadingResolver) {
+    console.log('✅ Résultats dispo, traitement...');
+
+    try {
+      let parsedResults = [];
+
+      if (dataSourceType === 'query') {
+        parsedResults = Array.isArray(JSON.parse(results)) 
+          ? JSON.parse(results) 
+          : [];
+      } else {
+        parsedResults = Array.isArray(dataProvider?.rows)
+          ? dataProvider.rows
+          : [];
+      }
+
+      console.log('📦 Résultats parsés :', parsedResults);
       loadingResolver(parsedResults);
-      loadingResolver = null;
+    } catch (err) {
+      console.error('❌ Erreur lors du parsing de results', err);
+      loadingResolver([]);
     }
+
+    loadingResolver = null;
   }
+}
+
 
   $: if (dataSourceType === 'static') {
     labelFieldName = 'label';
