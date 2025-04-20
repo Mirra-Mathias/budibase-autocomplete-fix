@@ -17,6 +17,8 @@
   export let labelFieldName;
   export let valueFieldName;
 
+  let unsubscribe = null;
+
   console.log("✅ Composant monté");
 
   const { styleable } = getContext('sdk');
